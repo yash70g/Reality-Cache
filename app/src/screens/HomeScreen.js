@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar,
 } from 'react-native';
-import { getCacheStats, initCache } from '../services/CacheManager';
+import { getCacheStats } from '../services/CacheManager';
 import PeerManager from '../services/PeerManager';
 
 export default function HomeScreen({ navigation }) {
@@ -27,7 +27,6 @@ export default function HomeScreen({ navigation }) {
 
     async function loadStats() {
         try {
-            await initCache();
             const stats = await getCacheStats();
             setCacheStats(stats);
             setPeerCount(PeerManager.getPeers().length);

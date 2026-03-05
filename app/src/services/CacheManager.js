@@ -9,62 +9,56 @@ let db = null;
 let dbInitialized = false;
 
 /**
- * Get a valid database connection, re-opening if stale.
+ * Get a valid database connection, initializing if needed.
  */
 async function getDb() {
     if (db && dbInitialized) {
-        try {
-            // Quick health check - if this throws, db handle is stale
-            await db.getFirstAsync('SELECT 1');
-            return db;
-        } catch (e) {
-            console.log('[CacheManager] DB handle stale, re-opening...');
-            db = null;
-            dbInitialized = false;
-        }
+        return db;
     }
     return await initCache();
 }
 
 /**
  * Initialize the cache database and directory.
+ * Uses openDatabaseSync to avoid async open/close race conditions
+ * that cause NullPointerException on Android.
  */
 export async function initCache() {
     try {
+        // Already initialized — return existing handle
+        if (db && dbInitialized) return db;
+
         // Ensure cache directory exists
         const dirInfo = await FileSystem.getInfoAsync(CACHE_DIR);
         if (!dirInfo.exists) {
             await FileSystem.makeDirectoryAsync(CACHE_DIR, { intermediates: true });
         }
 
-        // Close existing connection if any
-        if (db) {
-            try { await db.closeAsync(); } catch (e) { /* ignore */ }
-        }
+        // Open SQLite database synchronously — avoids the Android
+        // NullPointerException caused by concurrent async open/close cycles
+        db = SQLite.openDatabaseSync('realitycache');
 
-        // Open SQLite database
-        db = await SQLite.openDatabaseAsync('realitycache');
-
-        // Create tables
-        await db.execAsync(`
-      CREATE TABLE IF NOT EXISTS cached_pages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        hash TEXT UNIQUE NOT NULL,
-        url TEXT NOT NULL,
-        title TEXT DEFAULT 'Untitled',
-        mime_type TEXT DEFAULT 'text/html',
-        size INTEGER DEFAULT 0,
-        local_path TEXT NOT NULL,
-        last_accessed INTEGER NOT NULL,
-        access_count INTEGER DEFAULT 1,
-        created_at INTEGER NOT NULL
-      );
-    `);
-        await db.execAsync('CREATE INDEX IF NOT EXISTS idx_hash ON cached_pages(hash);');
-        await db.execAsync('CREATE INDEX IF NOT EXISTS idx_url ON cached_pages(url);');
-        await db.execAsync('CREATE INDEX IF NOT EXISTS idx_last_accessed ON cached_pages(last_accessed);');
+        // Create tables (execSync runs on the JS thread, fully blocking)
+        db.execSync(`
+            CREATE TABLE IF NOT EXISTS cached_pages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                hash TEXT UNIQUE NOT NULL,
+                url TEXT NOT NULL,
+                title TEXT DEFAULT 'Untitled',
+                mime_type TEXT DEFAULT 'text/html',
+                size INTEGER DEFAULT 0,
+                local_path TEXT NOT NULL,
+                last_accessed INTEGER NOT NULL,
+                access_count INTEGER DEFAULT 1,
+                created_at INTEGER NOT NULL
+            );
+        `);
+        db.execSync('CREATE INDEX IF NOT EXISTS idx_hash ON cached_pages(hash);');
+        db.execSync('CREATE INDEX IF NOT EXISTS idx_url ON cached_pages(url);');
+        db.execSync('CREATE INDEX IF NOT EXISTS idx_last_accessed ON cached_pages(last_accessed);');
 
         dbInitialized = true;
+        console.log('[CacheManager] Database initialized successfully');
         return db;
     } catch (e) {
         console.log('[CacheManager] initCache error:', e);
