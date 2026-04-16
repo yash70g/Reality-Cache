@@ -18,11 +18,6 @@ async function getDb() {
     return await initCache();
 }
 
-/**
- * Initialize the cache database and directory.
- * Uses openDatabaseSync to avoid async open/close race conditions
- * that cause NullPointerException on Android.
- */
 export async function initCache() {
     try {
         // Already initialized — return existing handle
